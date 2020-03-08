@@ -25,9 +25,15 @@ def parseJson(filePath: String): Map[String, Object] = {
   mapper.readValue[Map[String, Object]](json.reader())
 }
 
-def getShapes(jsonInfo: Map[String, Object]): List[Map[String, Object]] = {
-  val shapes = jsonInfo("shapes").asInstanceOf[List[Map[String, Object]]]
-  shapes
+def getShapes(jsonInfo: Map[String, Object]) = {
+  try {
+    val shapes = jsonInfo("shapes").asInstanceOf[List[Map[String, Object]]]
+    Some(shapes)
+  } catch {
+    case e: Exception =>
+    println(e)
+    None
+  }
 }
 
 def getImgPath(jsonInfo: Map[String, Object]): String = {
@@ -36,8 +42,15 @@ def getImgPath(jsonInfo: Map[String, Object]): String = {
 }
 
 // convert shape to xml tags
-def shapeToXml(m: List[Map[String, Object]]): List[scala.xml.Elem] = {
-  m.map(createXmlWithShape)
+def shapeToXml(m: Option[List[Map[String, Object]]]) = {
+  try {
+    val shape = m.get
+    Some(shape.map(createXmlWithShape))
+  } catch {
+    case e: Exception =>
+      println(e)
+    None
+  }
 }
 
 def createXmlWithShape(m: Map[String, Object]): scala.xml.Elem = {
@@ -70,7 +83,7 @@ def appendXml(originalXML: Elem, xml: Elem) = {
   }
 }
 
-def createXML(filename: String, path: String, shapes: List[Elem]) = {
+def createXML(filename: String, path: String, shapes: Option[List[Elem]]) = {
       <annotation>
         <folder>
           JPEGImages
@@ -90,11 +103,11 @@ def createXML(filename: String, path: String, shapes: List[Elem]) = {
           <depth>3</depth>
         </size>
         <segmented>0</segmented>
-        {shapes}
+        {if(shapes.isDefined) shapes.get}
       </annotation>
 }
 
-def saveXml(dirPath: String, shapes: List[List[scala.xml.Elem]], jsonFilePaths: List[String]) = {
+def saveXml(dirPath: String, shapes: List[Option[List[Elem]]], jsonFilePaths: List[String]) = {
   val printer = new PrettyPrinter(80, 2)
 
   val m = (jsonFilePaths zip shapes).toMap
