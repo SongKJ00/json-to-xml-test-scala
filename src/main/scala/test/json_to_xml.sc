@@ -6,6 +6,7 @@ import scala.xml.{Elem, PrettyPrinter, XML}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.fasterxml.jackson.module.scala.experimental.ScalaObjectMapper
+import javax.imageio.ImageIO
 
 // get list of files in path
 def getListOfFiles(dir: String): List[String] = {
@@ -17,39 +18,44 @@ def getListOfFiles(dir: String): List[String] = {
 }
 
 // parse json file
-def parseJson(filePath: String): Map[String, Object] = {
+def parseJson(filePath: String) = {
   val json = Source.fromFile(filePath)
   val mapper = new ObjectMapper() with ScalaObjectMapper
   mapper.registerModule(DefaultScalaModule)
 
-  mapper.readValue[Map[String, Object]](json.reader())
+  Map("filePath" -> filePath,
+  "json" -> mapper.readValue[Map[String, Object]](json.reader()))
 }
 
-def getShapes(jsonInfo: Map[String, Object]) = {
-  try {
-    val shapes = jsonInfo("shapes").asInstanceOf[List[Map[String, Object]]]
-    Some(shapes)
-  } catch {
-    case e: Exception =>
-    println(e)
-    None
+def getShapes(data: Map[String, Object]) = {
+  val filePath = data("filePath").asInstanceOf[String]
+  val json = data("json").asInstanceOf[Map[String, Object]]
+  val shapes = json.get("shapes")
+  if(shapes.isDefined) {
+    Map(
+      "filePath" -> filePath,
+      "shapes" -> shapes.get.asInstanceOf[List[Map[String, Object]]]
+    )
+  } else {
+    Map(
+      "filePath" -> filePath)
   }
 }
 
-def getImgPath(jsonInfo: Map[String, Object]): String = {
-  val json = jsonInfo("imagePath").asInstanceOf[String]
-  json
-}
-
 // convert shape to xml tags
-def shapeToXml(m: Option[List[Map[String, Object]]]) = {
-  try {
-    val shape = m.get
-    Some(shape.map(createXmlWithShape))
-  } catch {
-    case e: Exception =>
-      println(e)
-    None
+def shapeToXml(m: Map[String, Object]) = {
+  val filePath = m("filePath").asInstanceOf[String]
+  val shape = m.get("shapes")
+  if(shape.isDefined) {
+    Map(
+      "filePath" -> filePath,
+      "shapeXml" -> shape.get.asInstanceOf[List[Map[String, Object]]]
+        .map(createXmlWithShape)
+    )
+  } else {
+    Map(
+      "filePath" -> filePath
+    )
   }
 }
 
@@ -84,27 +90,31 @@ def appendXml(originalXML: Elem, xml: Elem) = {
 }
 
 def createXML(filename: String, path: String, shapes: Option[List[Elem]]) = {
-      <annotation>
-        <folder>
-          JPEGImages
-        </folder>
-        <filename>
-          {filename}
-        </filename>
-        <path>
-          {path}
-        </path>
-        <source>
-          <database>Unknown</database>
-        </source>
-        <size>
-          <width>644</width>
-          <height>482</height>
-          <depth>3</depth>
-        </size>
-        <segmented>0</segmented>
-        {if(shapes.isDefined) shapes.get}
-      </annotation>
+  val img = ImageIO.read(new File(path))
+  val imgWidth = img.getWidth()
+  val imgHeight = img.getHeight()
+
+  <annotation>
+    <folder>
+      JPEGImages
+    </folder>
+    <filename>
+      {filename}
+    </filename>
+    <path>
+      {path}
+    </path>
+    <source>
+      <database>Unknown</database>
+    </source>
+    <size>
+      <width>{imgWidth}</width>
+      <height>{imgHeight}</height>
+      <depth>3</depth>
+    </size>
+    <segmented>0</segmented>
+    {if(shapes.isDefined) shapes.get}
+  </annotation>
 }
 
 def saveXml(dirPath: String, shapes: List[Option[List[Elem]]], jsonFilePaths: List[String]) = {
@@ -126,11 +136,39 @@ def saveXml(dirPath: String, shapes: List[Option[List[Elem]]], jsonFilePaths: Li
   }
 }
 
+def save(data: Map[String, Object]) = {
+  val filePath = data("filePath").asInstanceOf[String]
+  val dirPath = filePath.splitAt(
+    filePath.lastIndexOf("/Annotations"))
+    ._1
+  val filenamePrefix = filePath.split("/")
+    .last
+    .split("\\.json")
+    .head
+  val xmlFileFullPath = dirPath+"/Annotations/"+filenamePrefix+".xml"
+  val jpgFileName = filenamePrefix+".jpg"
+  val jpgFileFullPath = dirPath+"/JPEGImages/"+jpgFileName
+
+  val fos = new FileOutputStream(xmlFileFullPath)
+  val writer = Channels.newWriter(fos.getChannel, "UTF-8")
+  try {
+    val printer = new PrettyPrinter(80, 2)
+    writer.write(printer.format(createXML(jpgFileName, jpgFileFullPath,
+      data.get("shapeXml") match {
+        case Some(x) => Some(x.asInstanceOf[List[Elem]])
+        case None => None
+      })))
+  } finally {
+    writer.close()
+  }
+}
+
 val dirPath = "/Users/kjsong/Downloads/log_imgs_devel2_inje"
 val jsonFilePaths = getListOfFiles(dirPath+"/Annotations")
-val shapes = jsonFilePaths
+jsonFilePaths
   .map(parseJson)
   .map(getShapes)
   .map(shapeToXml)
+  .map(save)
 
-saveXml(dirPath, shapes, jsonFilePaths)
+//saveXml(dirPath, shapes, jsonFilePaths)

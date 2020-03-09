@@ -1,7 +1,8 @@
 import java.io.{File, FileOutputStream}
 import java.nio.channels.Channels
 
-import play.api.libs.json.{JsObject, Json}
+import javax.imageio.ImageIO
+import play.api.libs.json.{JsObject, JsValue, Json}
 
 
 // get list of files in path
@@ -13,12 +14,21 @@ def getListOfFiles(dir: String, extension: String): List[String] = {
     .toList
 }
 
-def createDefaultJson(filename: String) = {
-  Json.obj(
-    "imageHeight" -> 644,
-    "imageWidth" -> 482,
-    "imagePath" -> filename
-  )
+def createDefaultJson(filename: String, jpgDir: String) = {
+
+  val jpgFileName = jpgDir + "/" +
+    filename.split("/").last.replace("\\.json", "\\.jpg")
+  val img = ImageIO.read(new File(jpgFileName))
+  val imgWidth = img.getWidth()
+  val imgHeight = img.getHeight()
+
+  Map(
+    "filename" -> filename,
+    "json" -> Json.obj(
+      "imageHeight" -> imgHeight,
+      "imageWidth" -> imgWidth,
+      "imagePath" -> filename
+  ))
 }
 
 def saveJson(path: String, filenames: List[String], jsonDataList: List[JsObject]) = {
@@ -34,21 +44,33 @@ def saveJson(path: String, filenames: List[String], jsonDataList: List[JsObject]
   }
 }
 
+def save(data: Map[String, Any]) = {
+  val filePath = data("filename").asInstanceOf[String]
+  val json = data("json").asInstanceOf[JsValue]
+  val fos = new FileOutputStream(filePath)
+  val writer = Channels.newWriter(fos.getChannel, "UTF-8")
+  try {
+    writer.write(Json.prettyPrint(json))
+  } finally {
+    writer.close()
+  }
+}
+
 val defaultPath = "/Users/kjsong/Downloads/log_imgs_devel2_inje"
 val jpgPath = defaultPath + "/JPEGImages"
 val jsonPath = defaultPath + "/Annotations"
 
-val jpgFiles = getListOfFiles(jpgPath, ".jpg")
+val jpgFilePrefixes = getListOfFiles(jpgPath, ".jpg")
   .map(_.split("/").last)
   .map(x => x.splitAt(x.lastIndexOf("."))._1)
 
-val jsonFiles = getListOfFiles(jsonPath, ".json")
+val jsonFilePrefixes = getListOfFiles(jsonPath, ".json")
   .map(_.split("/").last)
   .map(x => x.splitAt(x.lastIndexOf("."))._1)
 
-val omittedJsonFiles = (jpgFiles diff jsonFiles)
-  .map(_+".json")
-val omittedJsonData = omittedJsonFiles
-  .map(createDefaultJson)
+val omittedJsonFiles = (jpgFilePrefixes diff jsonFilePrefixes)
+  .map(jsonPath + "/" + _ + ".json")
+  .map(createDefaultJson(_, jpgPath))
+  .map(save)
 
-saveJson(jsonPath, omittedJsonFiles, omittedJsonData)
+//saveJson(jsonPath, omittedJsonFiles, omittedJsonData)
